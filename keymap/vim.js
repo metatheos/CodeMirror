@@ -791,11 +791,11 @@
         var operator = inputState.operator;
         var operatorArgs = inputState.operatorArgs || {};
         var registerName = inputState.registerName;
-        var selectionEnd = cm.getCursor('head');
-        var selectionStart = cm.getCursor('anchor');
+        var selectionHead = cm.getCursor('head');
+        var selectionAnchor = cm.getCursor('anchor');
         // The difference between cur and selection cursors are that cur is
         // being operated on and ignores that there is a selection.
-        var curStart = copyCursor(selectionEnd);
+        var curStart = copyCursor(selectionHead);
         var curOriginal = copyCursor(curStart);
         var curEnd;
         var repeat;
@@ -821,6 +821,8 @@
         motionArgs.repeat = repeat;
         inputState.reset();
         if (motion) {
+          //the motion expects the left side of the cursor, but head is now at the right side
+          if(vim.visualMode && cursorIsBefore(selectionAnchor, selectionHead))cm.setCursor({line:curStart.line, ch:curStart.ch-1});
           var motionResult = motions[motion](cm, motionArgs, vim);
           vim.lastMotion = motions[motion];
           if (!motionResult) {
@@ -839,35 +841,39 @@
           if (vim.visualMode) {
             // Check if the selection crossed over itself. Will need to shift
             // the start point if that happened.
-            if (cursorIsBefore(selectionStart, selectionEnd) &&
-                (cursorEqual(selectionStart, curEnd) ||
-                    cursorIsBefore(curEnd, selectionStart))) {
-              // The end of the selection has moved from after the start to
-              // before the start. We will shift the start right by 1.
-              selectionStart.ch += 1;
-            } else if (cursorIsBefore(selectionEnd, selectionStart) &&
-                (cursorEqual(selectionStart, curEnd) ||
-                    cursorIsBefore(selectionStart, curEnd))) {
-              // The opposite happened. We will shift the start left by 1.
-              selectionStart.ch -= 1;
+            if (cursorIsBefore(selectionAnchor, selectionHead) &&
+                (cursorEqual(selectionAnchor, curEnd) ||
+                    cursorIsBefore(curEnd, selectionAnchor))) {
+              // head and anchor passed each other, so swap the sides of the cursor they use
+              selectionAnchor.ch += 1;
+              curEnd.ch-=1;
+            } else if (cursorIsBefore(selectionHead, selectionAnchor) &&
+                (cursorEqual(selectionAnchor, curEnd) ||
+                    cursorIsBefore(selectionAnchor, curEnd))) {
+              // head and anchor passed each other, so swap the sides of the cursor they use
+              selectionAnchor.ch -= 1;
+              curEnd.ch+=1;
             }
-            selectionEnd = curEnd;
+            //anchor was moved to left side of cursor for the motion, move it back to the right side
+            if(vim.visualMode && cursorIsBefore(selectionAnchor, selectionHead))curEnd.ch+=1;
+            selectionHead = curEnd;
             if (vim.visualLine) {
-              if (cursorIsBefore(selectionStart, selectionEnd)) {
-                selectionStart.ch = 0;
-                selectionEnd.ch = lineLength(cm, selectionEnd.line);
+              if (cursorIsBefore(selectionAnchor, selectionHead)) {
+                selectionAnchor.ch = 0;
+                selectionHead.ch = lineLength(cm, selectionHead.line);
               } else {
-                selectionEnd.ch = 0;
-                selectionStart.ch = lineLength(cm, selectionStart.line);
+                selectionHead.ch = 0;
+                selectionAnchor.ch = lineLength(cm, selectionAnchor.line);
               }
             }
-            cm.setSelection(selectionStart, selectionEnd);
+            cm.setSelection(selectionAnchor, selectionHead);
             updateMark(cm, vim, '<',
-                cursorIsBefore(selectionStart, selectionEnd) ? selectionStart
-                    : selectionEnd);
-            updateMark(cm, vim, '>',
-                cursorIsBefore(selectionStart, selectionEnd) ? selectionEnd
-                    : selectionStart);
+                cursorIsBefore(selectionAnchor, selectionHead) ? selectionAnchor
+                    : selectionHead);
+            var selEndMark=cursorIsBefore(selectionAnchor, selectionHead) ? selectionHead
+                               : selectionAnchor;
+            //mark set to character left of selection's head
+            updateMark(cm, vim, '>', {line:selEndMark.line, ch:selEndMark.ch-1});
           } else if (!operator) {
             curEnd = clipCursorToContent(cm, curEnd);
             cm.setCursor(curEnd.line, curEnd.ch);
@@ -879,9 +885,9 @@
           vim.lastMotion = null;
           operatorArgs.repeat = repeat; // Indent in visual mode needs this.
           if (vim.visualMode) {
-            curStart = selectionStart;
-            curEnd = selectionEnd;
-            motionArgs.inclusive = true;
+            curStart = selectionAnchor;
+            curEnd = selectionHead;
+            motionArgs.inclusive = false;
           }
           // Swap start and end if motion was backward.
           if (cursorIsBefore(curEnd, curStart)) {
@@ -890,7 +896,7 @@
             curEnd = tmp;
             inverted = true;
           }
-          if (motionArgs.inclusive && !(vim.visualMode && inverted)) {
+          if (motionArgs.inclusive && !inverted) {
             // Move the selection end one to the right to include the last
             // character.
             curEnd.ch++;
@@ -981,6 +987,10 @@
         return { line: line, ch: endCh };
       },
       moveByDisplayLines: function(cm, motionArgs, vim) {
+        if(vim.visualMode && vim.visualLine){
+          //avoid being locked into line, fall back to linewise movement
+          return motions["moveByLines"](cm, motionArgs, vim);
+        }
         var cur = cm.getCursor();
         switch (vim.lastMotion) {
           case this.moveByDisplayLines:
@@ -1233,15 +1243,7 @@
             }, true /** includeLineBreak */);
           }
           // Make the initial selection.
-          if (!actionArgs.repeatIsExplicit && !vim.visualLine) {
-            // This is a strange case. Here the implicit repeat is 1. The
-            // following commands lets the cursor hover over the 1 character
-            // selection.
-            cm.setCursor(curEnd);
-            cm.setSelection(curEnd, curStart);
-          } else {
-            cm.setSelection(curStart, curEnd);
-          }
+          cm.setSelection(curStart, curEnd);
         } else {
           curStart = cm.getCursor('anchor');
           curEnd = cm.getCursor('head');
@@ -1264,8 +1266,9 @@
         }
         updateMark(cm, vim, '<', cursorIsBefore(curStart, curEnd) ? curStart
             : curEnd);
-        updateMark(cm, vim, '>', cursorIsBefore(curStart, curEnd) ? curEnd
-            : curStart);
+        var selEndMark=cursorIsBefore(curStart, curEnd) ? curEnd : curStart;
+        //mark set to character left of selection's head
+        updateMark(cm, vim, '>', {line:selEndMark.line, ch: selEndMark.ch-1});
       },
       joinLines: function(cm, actionArgs, vim) {
         var curStart, curEnd;
@@ -1374,9 +1377,6 @@
         if(vim.visualMode){
           curStart=cm.getCursor('start');
           curEnd=cm.getCursor('end');
-          // workaround to catch the character under the cursor
-          //  existing workaround doesn't cover actions
-          curEnd=cm.clipPos({line: curEnd.line, ch: curEnd.ch+1});
         }else{
           var line = cm.getLine(curStart.line);
           replaceTo = curStart.ch + actionArgs.repeat;

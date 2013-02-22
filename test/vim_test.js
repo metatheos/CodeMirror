@@ -814,8 +814,8 @@ testVim('mark', function(cm, vim, helpers) {
 });
 testVim('visual', function(cm, vim, helpers) {
   helpers.doKeys('l', 'v', 'l', 'l');
-  helpers.assertCursorAt(0, 3);
-  eqPos(makeCursor(0, 1), cm.getCursor('anchor'));
+  eqPos(makeCursor(0, 1), cm.getCursor('start'),"start of the selection wrong");
+  eqPos(makeCursor(0, 4), cm.getCursor('end'),"end of the selection wrong");
   helpers.doKeys('d');
   eq('15', cm.getValue());
 }, { value: '12345' });
