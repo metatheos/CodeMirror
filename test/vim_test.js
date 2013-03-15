@@ -88,7 +88,7 @@ function copyCursor(cur) {
 function testVim(name, run, opts, expectedFail) {
   var vimOpts = {
     lineNumbers: true,
-    keyMap: 'vim',
+    vimlike: true,
     showCursorWhenSelecting: true,
     value: code
   };
@@ -346,7 +346,7 @@ testVim('dl_eol', function(cm, vim, helpers) {
   var register = helpers.getRegisterController().getRegister();
   eq(' ', register.text);
   is(!register.linewise);
-  helpers.assertCursorAt(0, 6);
+  helpers.assertCursorAt(0, 5);
 }, { value: ' word1 ' });
 testVim('dl_repeat', function(cm, vim, helpers) {
   var curStart = makeCursor(0, 0);
@@ -438,32 +438,32 @@ testVim('dw_only_word', function(cm, vim, helpers) {
   var register = helpers.getRegisterController().getRegister();
   eq('word1 ', register.text);
   is(!register.linewise);
-  eqPos(curStart, cm.getCursor());
+  helpers.assertCursorAt(0, 0);
 }, { value: ' word1 ' });
 testVim('dw_eol', function(cm, vim, helpers) {
   // Assert that dw does not delete the newline if last word to delete is at end
   // of line.
-  var curStart = makeCursor(0, 1);
+  var curStart = makeCursor(0, 2);
   cm.setCursor(curStart);
   helpers.doKeys('d', 'w');
-  eq(' \nword2', cm.getValue());
+  eq('  \nword2', cm.getValue());
   var register = helpers.getRegisterController().getRegister();
   eq('word1', register.text);
   is(!register.linewise);
-  eqPos(curStart, cm.getCursor());
-}, { value: ' word1\nword2' });
+  helpers.assertCursorAt(0, 1);
+}, { value: '  word1\nword2' });
 testVim('dw_repeat', function(cm, vim, helpers) {
   // Assert that dw does delete newline if it should go to the next line, and
   // that repeat works properly.
-  var curStart = makeCursor(0, 1);
+  var curStart = makeCursor(0, 2);
   cm.setCursor(curStart);
   helpers.doKeys('d', '2', 'w');
-  eq(' ', cm.getValue());
+  eq('  ', cm.getValue());
   var register = helpers.getRegisterController().getRegister();
   eq('word1\nword2', register.text);
   is(!register.linewise);
-  eqPos(curStart, cm.getCursor());
-}, { value: ' word1\nword2' });
+  helpers.assertCursorAt(0, 1);
+}, { value: '  word1\nword2' });
 testVim('d_inclusive', function(cm, vim, helpers) {
   // Assert that when inclusive is set, the character the cursor is on gets
   // deleted too.
@@ -669,7 +669,7 @@ testVim('D', function(cm, vim, helpers) {
   var register = helpers.getRegisterController().getRegister();
   eq('rd1', register.text);
   is(!register.linewise);
-  helpers.assertCursorAt(0, 3);
+  helpers.assertCursorAt(0, 2);
 }, { value: ' word1\nword2\n word3' });
 testVim('C', function(cm, vim, helpers) {
   var curStart = makeCursor(0, 3);
@@ -919,8 +919,8 @@ testVim('delmark_all', function(cm, vim, helpers) {
 });
 testVim('visual', function(cm, vim, helpers) {
   helpers.doKeys('l', 'v', 'l', 'l');
-  helpers.assertCursorAt(0, 3);
-  eqPos(makeCursor(0, 1), cm.getCursor('anchor'));
+  eqPos(makeCursor(0, 1), cm.getCursor('start'),"start of the selection wrong");
+  eqPos(makeCursor(0, 4), cm.getCursor('end'),"end of the selection wrong");
   helpers.doKeys('d');
   eq('15', cm.getValue());
 }, { value: '12345' });
